@@ -1,0 +1,3 @@
+# MyAgent
+This repository is part of my MsC Thesis conducted at TU Delft. It contains the GOAL Agent used in a Dialog System which decouples the cognitive processes from the dialog management tasks. The agent is intended to get some information about the user and have a pleasant conversation with her.
+##Currently under development...
