@@ -1,0 +1,14 @@
+environment{
+   env = "EIS-2.0.0.jar" .
+}
+
+agentfiles{
+   "MyAgent.goal" [name=MyAgent].
+   
+}
+
+launchpolicy{
+   when [name=entity1]@env do launch MyAgent : MyAgent .
+   
+}
+

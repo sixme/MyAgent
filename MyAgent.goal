@@ -1,0 +1,160 @@
+init module{
+ 
+ knowledge{
+   
+   %Relationships
+   iis(Who,_,X) :-  not(var(X)) , not(var(Who)) .	%to avoid confusion with the prolog 'is' predicate .	
+   has(Who,_,X) :-  not(var(X)) , not(var(Who)) .
+   likes(Who,X) :-  not(var(X)) , not(var(Who)) .
+   dislikes(Who,X) :-  not(var(X)) , not(var(Who)) .
+   wants(Who, X) :- not(var(X)) , not(var(Who)) .
+   prefers(Who, This, That) :- not(var(This)) , not(var(That)), not(var(Who)) .
+   reason(Reason) :- not(var(Reason)) .
+   reason(Who, X, Reason):- not(var(X)) , not(var(Reason)), not(var(Who)).
+  
+   %Concepts   
+   meetUser :-  has(user, userName, X) .
+   gender :-    iis(user, gender, X) .
+   age :-		iis(user, age, X) .
+   partner :-	has(user, partner, X) .
+   single :-    not(partner) .
+   futureJob :- wants(user, X) .
+   
+   %Goals
+   knowBasicUser :- gender, age . 
+   pleasantCoversation :- likes(user,X), reason(user,X,Reason) .
+   knowMore :- partner, futureJob .	
+   
+   }
+   goals{
+   }
+   
+   beliefs{
+   	agentIs(normal) .
+	agentMood(0) . 
+	has(agent, name, 'Fredy') .
+	iis(agent, gender, 'a robot') .
+	iis(agent, 'single') .
+	likes(agent, 'single') .
+	reason(agent, 'single', 'more time to chat with you') .
+	
+	
+   }			   
+   				      
+   program{        
+ 	if true then welcome .
+ 	if true then event . %To adopt goals on the first interaction
+    }
+   
+   actionspec{
+	  %Says something 
+	  %Type can be 'clarification', 'ask' or 'statement'. It's used to synchronize with DM.
+	  %ID identifies the current interaction, for instance 'userName', 'gender'...
+	  %Text is the message delivered to the user, the 'said' beliefs avoids repeating the same message again and again.
+      say(Type,ID,Message) {
+         pre{ true }
+         post{ usingID(ID), said(Message) }
+      }
+
+      %Quits the interaction more or less gently depending with a message.
+      %Mode is the message which will be displayed before shutting down the system
+      end(Mode){
+      	 pre{ true }
+         post{ true }
+      }
+
+   }
+   
+}
+
+main module  {
+   program {
+	%If we want to meet the user then call the meeting user module .
+	if a-goal(meetUser) then meetUser .
+	%If we have met the user (know his name) and need to know more about her, call the proper basic knowing model.
+	if bel(meetUser), a-goal(knowBasicUser) then knowBasicUser .
+	%If we know the basics (gender and age) of the user then finish the interaction
+	if bel(knowBasicUser) then end .
+	
+   }
+}
+%%%%%%%%%%%%%%%%%%%%%%%%%EVENTS%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+event module{
+   program{
+   	%General rules
+   		%Failed to parse the input
+     if bel (percept(failed(_)), usingID(X)) then say(clarification, X, "I am afraid I didn't understand you").
+     	%Quit the interaction because user wants to leave
+     if bel (percept(userWantsToGo(_))) then insert(userWantsToGo) + end .
+    %Update the agent mood
+     if bel (percept(collaborative(Value)), Value == 'Negative', agentMood(Y),Y > -2, X is Y-1) then delete(agentMood(Y)) + insert(agentMood(X)) .
+     if bel (percept(collaborative(Value)), Value == 'Positive', agentMood(Y), Y < 2, X is Y + 1) then delete(agentMood(Y)) + insert(agentMood(X)) .
+    %Evaluate agent mood first
+   	if true then agentMood .
+    %Process IS percepts (ie: iis(user, gender, 'a boy'))
+     if bel (percept(iis(W, Z, X)), usingID(Y)) then insert(iis(W, Z, X)) + delete(usingID(Y)) .
+    %Process HAS percepts (ie: has(user, userName, 'Whatever'))
+   	 if bel(percept(has(user,X,Y))) then insert(has(user,X,Y)).
+   	 if bel(has(user,userName,Name), usingID(X), X == 'userName', atom_concat('Such a pleasure meeting you ', Name, M1),atom_concat(M1,'!',M2) ) then say(statement,X,M2) + delete(usingID(X)) . 
+    %Goal management
+     if not(goal(true)), not(bel(meetUser)) then adopt(meetUser) .
+     if not(goal(true)), bel(meetUser), not(bel(knowBasicUser)) then adopt(knowBasicUser) .
+	
+   }
+}
+%%%%%%%%%%%%%%%%%%END OF EVENTS%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+module agentMood{
+	program{
+		if bel(agentMood(X), X == 0, agentIs(Y), Y \== 'normal') then delete(agentIs(Y))+insert(agentIs(normal))  .
+		if bel(agentMood(X), X == 1, agentIs(Y), Y \== 'amused') then delete(agentIs(Y))+insert(agentIs(amused))  .
+		if bel(agentMood(X), X == 2, agentIs(Y), Y \== 'happy') then delete(agentIs(Y))+insert(agentIs(happy))  .
+		if bel(agentMood(X), X == -1, agentIs(Y), Y \== 'annoyed') then delete(agentIs(Y))+insert(agentIs(annoyed))  .
+		if bel(agentMood(X), X == -2, agentIs(Y), Y \== 'angry') then delete(agentIs(Y))+insert(agentIs(angry))  .
+	}
+}
+
+module meetUser{
+	program {
+		%Ask normally for the name
+		if bel(usingID(X), X \== userName, Message = "Hey there stranger! Tell me your name please", not(said(Message)))  then delete(usingID(X)) + say(ask, userName, Message) .
+		%Ask annoyed for the name
+		if bel(usingID(userName), agentIs(annoyed), Message = "So you don't want to tell me your name? Really? I am afraid if I don't know how to address you we won't have any conversation at all...", not(said(Message))) then say(statement, userName, Message) .
+		%Finish the interaction because agent is angry
+		if bel(usingID(userName), agentIs(angry)) then end .
+	}
+}
+module knowBasicUser{
+	program{
+		%Ask gender in an amused way
+		if bel(not(gender), agentIs(amused), has(user,userName,Name), atom_concat('Okay time to know you a little bit better ',Name, M1), atom_concat(M1, '! Are you a rowdy boy or a little princess?', M2), not(said(M2))) then say(ask, gender, M2) .
+		%Ask gender in a normal way
+		if bel(not(gender), agentIs(normal), Message = "Are you a boy or a girl?", not(said(Message))) then say(ask, gender, Message) .
+		%Respond to gender (boy)
+		if bel(iis(user, gender, X), X == 'a boy', Message = "Okay bandit! And how old are you?", not(said(Message))) then say(ask, age, Message) .
+		%Respond to gender (girl)
+		if bel(iis(user, gender, X), X == 'a girl', Message = "Okay princess! And how old are you?", not(said(Message))) then say(ask, age, Message) .
+	}
+}
+
+
+module welcome{
+	program{
+		if true then say(welcome,statement, "Welcome to the system! So nice that you decided to talk to me") .
+	}
+}
+
+%Ends the interaction by displaying a Message and shutting down the shell.
+module end{
+	program{
+			%End in angry mode
+		if bel(agentIs(angry)) then end("Okay whatever, you don't want to talk to me, I leave, bye! I hope next time you will be more cooperative...") .
+			%End because user wants to go
+		if bel(userWantsToGo) then end("Oh! So sad you want to go, well see you next time! Bye Bye!") .
+			%End in normal mode
+		if bel(not(userWantsToGo), has(user, userName, Name), atom_concat('Great! It was a nice talk but I am afraid I have to go now, see you next time ', Name, Message)) then end(Message) .
+	}
+}
+
+
+
