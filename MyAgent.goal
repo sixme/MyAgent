@@ -1,7 +1,7 @@
 init module{
  
  knowledge{
-   
+   %%TODO INCLUDE MOOD!!!
    %Relationships
    iis(Who,_,X) :-  not(var(X)) , not(var(Who)) .	%to avoid confusion with the prolog 'is' predicate .	
    has(Who,_,X) :-  not(var(X)) , not(var(Who)) .
@@ -9,21 +9,26 @@ init module{
    dislikes(Who,X) :-  not(var(X)) , not(var(Who)) .
    wants(Who, X) :- not(var(X)) , not(var(Who)) .
    prefers(Who, This, That) :- not(var(This)) , not(var(That)), not(var(Who)) .
-   reason(Reason) :- not(var(Reason)) .
    reason(Who, X, Reason):- not(var(X)) , not(var(Reason)), not(var(Who)).
-  
+   userIs(X) :- not(var(X)) .
+   
    %Concepts   
    meetUser :-  has(user, userName, X) .
    gender :-    iis(user, gender, X) .
    age :-		iis(user, age, X) .
-   partner :-	has(user, partner, X) .
-   single :-    not(partner) .
+   maritalStatus :-	has(user, partner, X) .
    futureJob :- wants(user, X) .
+   male :- iis(user, gender, X), X = 'a boy' .
+   female :- iis(user, gender, X), X = 'a girl' .
+   unknownTopics :- unknown(_) .
    
    %Goals
    knowBasicUser :- gender, age . 
-   pleasantCoversation :- likes(user,X), reason(user,X,Reason) .
-   knowMore :- partner, futureJob .	
+   pleasantConversation :- (likes(user,X) ; dislikes(user,X)) , reason(user,X,Reason) .
+   unknownTopics :- (unknown(_)) .
+   cheerUp :- not(userIs(bored)) .
+   knowMore :- maritalStatus, futureJob .
+   %, futureJob, reason(user,futureJob, X) .	
    
    }
    goals{
@@ -32,11 +37,16 @@ init module{
    beliefs{
    	agentIs(normal) .
 	agentMood(0) . 
-	has(agent, name, 'Fredy') .
-	iis(agent, gender, 'a robot') .
-	iis(agent, 'single') .
-	likes(agent, 'single') .
+	has(agent, name, 'Sixme') . %name
+	has(agent, partner, single) . %marital status
+	iis(agent, gender, 'a robot') . %gender
+	iis(agent, age, '1') . %age
+	has(agent, job, 'help humanity') . %occupation
+	likes(agent, single) .
+	dislikes(agent, 'boring people') .
+	reason(agent, 'boring people', "I don't learn anything...") .
 	reason(agent, 'single', 'more time to chat with you') .
+	knownPredicates(0) .
 	
 	
    }			   
@@ -64,17 +74,34 @@ init module{
       }
 
    }
+   
 }
 
 main module  {
-   program {
+   program [order=linear] {
 	%If we want to meet the user then call the meeting user module .
 	if a-goal(meetUser) then meetUser .
-	%If we have met the user (know his name) and need to know more about her, call the proper basic knowing model.
+	%TODO Check for boredom
+	%If the user doesn't like the conversation and we have unknown predicates, try to know them.
+	%if a-goal(cheerUp), bel(unknownTopics) then knowUnknowns .
+	%Otherwise joke
+	if a-goal(cheerUp), bel(not(unknownTopics), M = "Mmm... Let's try to have some fun with some good jokes okay?", not(said(M))) then say(statement, joke, M) .
+	if a-goal(cheerUp), bel(not(unknownTopics)) then joke .
+	%If we have met the user (know his name) and need to know more about her, call the basic knowing model.
 	if bel(meetUser), a-goal(knowBasicUser) then knowBasicUser .
-	%If we know the basics (gender and age) of the user then finish the interaction
-	if bel(knowBasicUser) then end .
+	%If we have just learnt something 'more' then talk about it.
+	if a-goal(pleasantConversation) then smallTalk .
+	%If we know we want to know more about the user and we don't have too many predicates then call know more module
+	if a-goal(knowMore) then knowMore .
 	
+	%If both goals pleasantConversation and know more predicates are active but we have know more than 2 predicates already  => smallTalk.
+	%try to make one interaction knowMore, one interaction pleasantConversation
+	%if a-goal(pleasantConversation), a-goal(knowMore), bel(knownPredicates(X), X >= 2) then smallTalk .
+	%If already had a smallTalk => knowMore
+	%if bel(pleasantConversation), a-goal(knowMore) then knowMore .
+	
+	if not(goal(true)) then end .
+
    }
 }
 %%%%%%%%%%%%%%%%%%%%%%%%%EVENTS%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -82,26 +109,41 @@ event module{
    program{
    	%General rules
    		%Failed to parse the input
-     if bel (percept(failed(_)), usingID(X)) then say(clarification, X, "I am afraid I didn't understand you").
+     if bel (percept(failed(_))) then insert(failed) .
+     if bel (failed, usingID(joke)) then delete(failed) + say(clarification, joke, "Sorry, I didn't understand you") .
      	%Quit the interaction because user wants to leave
      if bel (percept(userWantsToGo(_))) then insert(userWantsToGo) + end .
+     	%User doesn't like the conversation ('drop' the goal (partner or futureJob))
+     if bel (percept(collaborative(Value)), Value == 'Negative', usingID(Y),Y == 'partner') then insert(userDislikesConversation) + insert(userIs(bored)) + insert(has(user, partner, unknown)) + insert(dislikes(user, 'talk partner')) + delete(usingID(Y)) .
+     if bel (percept(collaborative(Value)), Value == 'Negative', usingID(Y),Y == 'futureJob') then insert(userDislikesConversation)+ insert(userIs(bored)) + insert(wants(user, unknown)) + insert(dislikes(user, 'talk futureJob')) + delete(usingID(Y)) .
     %Update the agent mood
      if bel (percept(collaborative(Value)), Value == 'Negative', agentMood(Y),Y > -2, X is Y-1) then delete(agentMood(Y)) + insert(agentMood(X)) .
      if bel (percept(collaborative(Value)), Value == 'Positive', agentMood(Y), Y < 2, X is Y + 1) then delete(agentMood(Y)) + insert(agentMood(X)) .
-    %Evaluate agent mood first
-   	if true then agentMood .
+    %Evaluate agent mood.
+   	 if true then agentMood .
+   	%Managing joke feedback
+   	 %Positive feedback so coming back to normal  state (drop cheerUp, delete introductory phrase)
+   	 if bel (percept(collaborative(Value)), usingID(joke), userIs(bored), Value == 'Positive',  M = "Nice to make you happy again!", M2 = "Mmm... Let's try to have some fun with some good jokes okay?"), goal(cheerUp) then delete(userIs(bored)) + delete(agentTalked) + say(statement, joke, M) + delete(usingID(joke)) + delete(said(M2)) + drop(cheerUp).
+   	 if bel	(percept(collaborative(Value)), Value == 'Negative') then delete(agentTalked) .
+   	 if bel (usingID(joke), agentIs(angry)) then end .
     %Process IS percepts (ie: iis(user, gender, 'a boy'))
-     if bel (percept(iis(W, Z, X)), usingID(Y)) then insert(iis(W, Z, X)) + delete(usingID(Y)) .
-    %Process HAS percepts (ie: has(user, userName, 'Whatever'))
-   	 if bel(percept(has(user,X,Y))) then insert(has(user,X,Y)).
-   	 if bel(has(user,userName,Name), usingID(X), X == 'userName', atom_concat('Such a pleasure meeting you ', Name, M1),atom_concat(M1,'!',M2) ) then say(statement,X,M2) + delete(usingID(X)) . 
+     if bel (percept(iis(W, Z, X)), usingID(Y), knownPredicates(Num), NewNum is Num + 1, not(iis(W, Z, _))) then insert(iis(W, Z, X)) + delete(usingID(Y)) + delete(knownPredicates(Num)) +insert(knownPredicates(NewNum)) .
+     if bel (iis(user, age, Age), Age \== 'unknown', atom_concat("Wow! ", Age, M), atom_concat(M, " years old seem a great deal to me!", M2), not(said(M2))) then say(statement, age, M2)+delete(usingID(age)) .
+    %Process HAS percepts (ie: has(user, userName, 'something'))
+   	 if bel (percept(has(user,X,Y)), knownPredicates(Num), NewNum is Num + 1, not(has(user,X,_))) then insert(has(user,X,Y))+ delete(knownPredicates(Num)) +insert(knownPredicates(NewNum)) .
+   	 if bel (has(user,userName,Name), usingID(X), X == 'userName', atom_concat('Such a pleasure meeting you ', Name, M1),atom_concat(M1,'!',M2) ) then say(statement,X,M2) + delete(usingID(X)) .
+    %Dislike percepts
+     if bel (percept(dislikes(X))) then insert(dislikes(user, X)) .
     %Goal management
      if not(goal(true)), not(bel(meetUser)) then adopt(meetUser) .
      if not(goal(true)), bel(meetUser), not(bel(knowBasicUser)) then adopt(knowBasicUser) .
+     if not(goal(true)), bel(knowBasicUser) then adopt(knowMore) .
+     if bel(userDislikesConversation), not(goal(cheerUp)) then adopt(cheerUp) + delete(userDislikesConversation) .
+     if bel(inConversation) then adopt(pleasantConversation) + delete(inConversation) .
 	
    }
 }
-%%%%%%%%%%%%%%%%%%END OF EVENTS%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%END OF EVENTS%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 module agentMood{
 	program{
@@ -115,6 +157,8 @@ module agentMood{
 
 module meetUser{
 	program {
+		%Deal with failures...
+		if bel(usingID(userName), failed, Message = "I couldn't hear your name, why don't you try to say: 'My name is...'") then delete(failed)+ say(clarification, userName, Message) . 
 		%Ask normally for the name
 		if bel(usingID(X), X \== userName, Message = "Hey there stranger! Tell me your name please", not(said(Message)))  then delete(usingID(X)) + say(ask, userName, Message) .
 		%Ask annoyed for the name
@@ -125,6 +169,12 @@ module meetUser{
 }
 module knowBasicUser{
 	program{
+		%Try to deal with failed interactions
+		if bel(failed, usingID(gender), Message = "Mmm I didn't catch that... Did you say that you're a boy?", not(said(Message))) then say(clarification, gender, Message)+delete(failed) .
+		if bel(failed, usingID(gender), Message = "I think it will be better if we skip your gender then hehe, how old are you?", not(said(Message))) then say(ask, age, Message)+delete(failed)+insert(iis(user,gender,unknown))+delete(usingID(gender))+insert(unknown(gender)) .
+		if bel(failed, usingID(age), iis(agent, age, X), M1 = "I didn't understand your age, try again! For instance I am ", atom_concat(M1,X,M2), atom_concat(M2, ' years old! And you?', M3), not(said(M3))) then say(clarification, age, M3)+delete(failed) .
+		if bel(failed, usingID(age), Message = "My robot's ears don't let me hear your age, let's move to something else!", not(said(Message))) then say(statement, age, Message)+delete(failed)+insert(iis(user,age,unknown))+delete(usingID(age))+insert(unknown(age)) .
+		
 		%Ask gender in an amused way
 		if bel(not(gender), agentIs(amused), has(user,userName,Name), atom_concat('Okay time to know you a little bit better ',Name, M1), atom_concat(M1, '! Are you a rowdy boy or a little princess?', M2), not(said(M2))) then say(ask, gender, M2) .
 		%Ask gender in a normal way
@@ -136,10 +186,44 @@ module knowBasicUser{
 	}
 }
 
+module knowMore{
+	program{
+		%Deal with failures in partner
+		if bel(failed, usingID(partner), male, M = "I didn't understand the name of your girlfriend, what was it?", not(said(M))) then say(clarification, partner, M)+delete(failed). 
+		if bel(failed, usingID(partner), female, M = "I didn't understand the name of your prince, what was it?", not(said(M))) then say(clarification, partner, M)+delete(failed).
+		if bel(failed, usingID(partner), M = "I didn't understand the name of your loved one! What was it?", not(said(M))) then say(clarification, partner, M)+delete(failed) .
+		if bel(failed, usingID(partner), M = "Ouch! I think I have big problems understanding things today... Let's skip the partner, there are better things to talk about!", not(said(M))) then say(statement, partner, M)+insert(has(user,partner,unknown))+insert(unknown(partner)) .
+		
+		%Partner
+		if bel(not(maritalStatus), male,  M = "Okay, and what about the love? Who is your lovely girlfriend?", not(said(M))) then say(ask, partner, M) .
+		if bel(not(maritalStatus), female,  M = "Okay, and what about the love? Who is your handsome boyfriend?", not(said(M))) then say(ask, partner, M) .
+		if bel(not(maritalStatus), not(male), not(female), M = "Okay! And who is your partner or your loved one?", not(said(M))) then say(ask, partner, M) .
+		if bel(has(user, partner, X), X == 'no', M = "Oh... I see, well you have more time to play with your friends then hehe", not(said(M))) then say(statement, partner, M)+insert(inConversation) .
+		if bel(has(user, partner, X), X \== 'no', X \== 'unknown', M = "So nice! I guess you really like " , atom_concat(M, X, M2), atom_concat(M2, " don't you?", M3), not(said(M3))) then say(statement, partner, M3)+insert(inConversation) .
+	}
+}
+
+module smallTalk{
+	program{
+		if bel(usingID(partner), has(user, partner, 'no'), dislikes(user, X), X == 'being single', M = "Yeah, I can imagine but don't worry! You will find someone, I am also single hehe", not(said(M))) then say(statement, partner, M) .
+		
+		
+	}
+}
 
 module welcome{
 	program{
-		if true then say(welcome,statement, "Welcome to the system! So nice that you decided to talk to me") .
+		if true then say(statement, welcome, "Welcome to the system! So nice that you decided to talk to me") .
+	}
+}
+
+module joke{
+	program [order=random]{
+		if bel(not(agentTalked), Joke = "What about... Q: Why did the birdie go to the hospital? A: To get a tweetment! Hahaha did you like it?", not(said(Joke))) then say(statement, joke, Joke) .
+		if bel(not(agentTalked), Joke = "Maybe with this one... 'Two guys walk into a bar and sit down to eat their lunches. Then the bartender says, 'Sorry, but you can't eat your own food in here.' So the two guys look at each other and swap lunches!' Hahaha, so funny! Did you like it?", not(said(Joke))) then say(statement, joke, Joke)+insert(agentTalked).
+		if bel(not(agentTalked), Joke = "I think you will like this one! 'Can a kangaroo jump higher than a house? Of course, a house doesn't jump at all!\' Hahaha, so funny! Did you like it?", not(said(Joke))) then say(statement, joke, Joke)+insert(agentTalked) .
+		if bel(not(agentTalked), Joke = "I think this one is really good... 'My dog used to chase people on a bike a lot. It got so bad, finally I had to take his bike away.' Hahaha, so funny! Did you like it?", not(said(Joke))) then say(statement, joke, Joke)+insert(agentTalked) .
+		if bel(not(agentTalked), Joke = "This one about bacon is so hilarious! 'I wanted to grow my own food but I couldn't get bacon seeds anywhere!' Hahaha, so funny! Did you like it?", not(said(Joke))) then say(statement, joke, Joke)+insert(agentTalked) .
 	}
 }
 
@@ -147,7 +231,7 @@ module welcome{
 module end{
 	program{
 			%End in angry mode
-		if bel(agentIs(angry)) then end("Okay whatever, you don't want to talk to me, I leave, bye! I hope next time you will be more cooperative...") .
+		if bel(agentIs(angry)) then end("Okay whatever, you don't want to talk to me, I leave, bye! I hope next time you will be more cooperative and ready to have some fun...") .
 			%End because user wants to go
 		if bel(userWantsToGo) then end("Oh! So sad you want to go, well see you next time! Bye Bye!") .
 			%End in normal mode
