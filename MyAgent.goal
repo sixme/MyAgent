@@ -64,7 +64,6 @@ init module{
       }
 
    }
-   
 }
 
 main module  {
@@ -102,7 +101,7 @@ event module{
 	
    }
 }
-%%%%%%%%%%%%%%%%%%END OF EVENTS%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%END OF EVENTS%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 module agentMood{
 	program{
