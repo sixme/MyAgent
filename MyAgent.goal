@@ -7,9 +7,9 @@ init module{
    has(Who,_,X) :-  not(var(X)) , not(var(Who)) .
    likes(Who,X) :-  not(var(X)) , not(var(Who)) .
    dislikes(Who,X) :-  not(var(X)) , not(var(Who)) .
-   wants(Who, X) :- not(var(X)) , not(var(Who)) .
+   wants(Who,_, X) :- not(var(X)) , not(var(Who)) .
    prefers(Who, This, That) :- not(var(This)) , not(var(That)), not(var(Who)) .
-   reason(Who, X, Reason):- not(var(X)) , not(var(Reason)), not(var(Who)).
+   reason(Who, X, Reason):- not(var(Who)) , not(var(X)), not(var(Reason)).
    userIs(X) :- not(var(X)) .
    
    %Concepts   
@@ -17,18 +17,19 @@ init module{
    gender :-    iis(user, gender, X) .
    age :-		iis(user, age, X) .
    maritalStatus :-	has(user, partner, X) .
-   futureJob :- wants(user, X) .
+   futureJob :- wants(user, futureJob, X) .
    male :- iis(user, gender, X), X = 'a boy' .
    female :- iis(user, gender, X), X = 'a girl' .
    unknownTopics :- unknown(_) .
+   userSingle :- has(user, partner, no) .
+   
    
    %Goals
    knowBasicUser :- gender, age . 
-   pleasantConversation :- (likes(user,X) ; dislikes(user,X)) , reason(user,X,Reason) .
+   pleasantConversation(X) :- (likes(user,X) ; dislikes(user, X) ; wants(user,_, X)), reason(user,X,Reason), convCompleted .
    unknownTopics :- (unknown(_)) .
    cheerUp :- not(userIs(bored)) .
    knowMore :- maritalStatus, futureJob .
-   %, futureJob, reason(user,futureJob, X) .	
    
    }
    goals{
@@ -38,17 +39,17 @@ init module{
    	agentIs(normal) .
 	agentMood(0) . 
 	has(agent, name, 'Sixme') . %name
-	has(agent, partner, single) . %marital status
+	has(agent, partner, 'no') . %marital status
 	iis(agent, gender, 'a robot') . %gender
 	iis(agent, age, '1') . %age
 	has(agent, job, 'help humanity') . %occupation
-	likes(agent, single) .
+	likes(agent, 'being single') .
 	dislikes(agent, 'boring people') .
 	reason(agent, 'boring people', "I don't learn anything...") .
-	reason(agent, 'single', 'more time to chat with you') .
+	reason(agent, 'being single', 'more time to chat with you') .
 	knownPredicates(0) .
 	
-	
+	%REVIEW THE DISLIKE CONVERSATION	
    }			   
    				      
    program{        
@@ -77,7 +78,7 @@ init module{
    
 }
 
-main module  {
+main module [exit=never] {
    program [order=linear] {
 	%If we want to meet the user then call the meeting user module .
 	if a-goal(meetUser) then meetUser .
@@ -90,7 +91,7 @@ main module  {
 	%If we have met the user (know his name) and need to know more about her, call the basic knowing model.
 	if bel(meetUser), a-goal(knowBasicUser) then knowBasicUser .
 	%If we have just learnt something 'more' then talk about it.
-	if a-goal(pleasantConversation) then smallTalk .
+	if a-goal(pleasantConversation(X)) then smallTalk .
 	%If we know we want to know more about the user and we don't have too many predicates then call know more module
 	if a-goal(knowMore) then knowMore .
 	
@@ -115,9 +116,9 @@ event module{
      if bel (percept(userWantsToGo(_))) then insert(userWantsToGo) + end .
      	%User doesn't like the conversation ('drop' the goal (partner or futureJob))
      if bel (percept(collaborative(Value)), Value == 'Negative', usingID(Y),Y == 'partner') then insert(userDislikesConversation) + insert(userIs(bored)) + insert(has(user, partner, unknown)) + insert(dislikes(user, 'talk partner')) + delete(usingID(Y)) .
-     if bel (percept(collaborative(Value)), Value == 'Negative', usingID(Y),Y == 'futureJob') then insert(userDislikesConversation)+ insert(userIs(bored)) + insert(wants(user, unknown)) + insert(dislikes(user, 'talk futureJob')) + delete(usingID(Y)) .
+     if bel (percept(collaborative(Value)), Value == 'Negative', usingID(Y),Y == 'futureJob') then insert(userDislikesConversation)+ insert(userIs(bored)) + insert(wants(user, futureJob, unknown)) + insert(dislikes(user, 'talk futureJob')) + delete(usingID(Y)) .
     %Update the agent mood
-     if bel (percept(collaborative(Value)), Value == 'Negative', agentMood(Y),Y > -2, X is Y-1) then delete(agentMood(Y)) + insert(agentMood(X)) .
+     if bel (percept(collaborative(Value)), Value == 'Negative', agentMood(Y),Y > -2, X is Y - 1) then delete(agentMood(Y)) + insert(agentMood(X)) .
      if bel (percept(collaborative(Value)), Value == 'Positive', agentMood(Y), Y < 2, X is Y + 1) then delete(agentMood(Y)) + insert(agentMood(X)) .
     %Evaluate agent mood.
    	 if true then agentMood .
@@ -134,12 +135,18 @@ event module{
    	 if bel (has(user,userName,Name), usingID(X), X == 'userName', atom_concat('Such a pleasure meeting you ', Name, M1),atom_concat(M1,'!',M2) ) then say(statement,X,M2) + delete(usingID(X)) .
     %Dislike percepts
      if bel (percept(dislikes(X))) then insert(dislikes(user, X)) .
+    %Like percepts
+     if bel (percept(likes(X))) then insert(likes(user, X)) .
+    %Wants percepts
+     if bel (percept(wants(user, X, W)), not(wants(user, X, _))) then insert(wants('user', X, W)) .
+    %Reason percepts
+     if bel (percept(reason(user, X, R)), not(reason(user, X, _))) then insert(reason('user', X, R)) .
     %Goal management
      if not(goal(true)), not(bel(meetUser)) then adopt(meetUser) .
      if not(goal(true)), bel(meetUser), not(bel(knowBasicUser)) then adopt(knowBasicUser) .
      if not(goal(true)), bel(knowBasicUser) then adopt(knowMore) .
      if bel(userDislikesConversation), not(goal(cheerUp)) then adopt(cheerUp) + delete(userDislikesConversation) .
-     if bel(inConversation) then adopt(pleasantConversation) + delete(inConversation) .
+     if bel(inConversation(X)) then adopt(pleasantConversation(X)) + delete(inConversation(X)) + delete(convCompleted).
 	
    }
 }
@@ -193,20 +200,35 @@ module knowMore{
 		if bel(failed, usingID(partner), female, M = "I didn't understand the name of your prince, what was it?", not(said(M))) then say(clarification, partner, M)+delete(failed).
 		if bel(failed, usingID(partner), M = "I didn't understand the name of your loved one! What was it?", not(said(M))) then say(clarification, partner, M)+delete(failed) .
 		if bel(failed, usingID(partner), M = "Ouch! I think I have big problems understanding things today... Let's skip the partner, there are better things to talk about!", not(said(M))) then say(statement, partner, M)+insert(has(user,partner,unknown))+insert(unknown(partner)) .
-		
+		%Deal with failures in futureJob
+		if bel(failed, usingID(futureJob), not(futureJob), M = "Ouch! I couldn't understand what you wanted to be! Why don't you try with 'I want to be a...'") then say(clarification, futureJob, M)+delete(failed) .
 		%Partner
-		if bel(not(maritalStatus), male,  M = "Okay, and what about the love? Who is your lovely girlfriend?", not(said(M))) then say(ask, partner, M) .
-		if bel(not(maritalStatus), female,  M = "Okay, and what about the love? Who is your handsome boyfriend?", not(said(M))) then say(ask, partner, M) .
-		if bel(not(maritalStatus), not(male), not(female), M = "Okay! And who is your partner or your loved one?", not(said(M))) then say(ask, partner, M) .
-		if bel(has(user, partner, X), X == 'no', M = "Oh... I see, well you have more time to play with your friends then hehe", not(said(M))) then say(statement, partner, M)+insert(inConversation) .
-		if bel(has(user, partner, X), X \== 'no', X \== 'unknown', M = "So nice! I guess you really like " , atom_concat(M, X, M2), atom_concat(M2, " don't you?", M3), not(said(M3))) then say(statement, partner, M3)+insert(inConversation) .
+		if not(goal(pleasantConversation(_))), bel(not(maritalStatus), male,  M = "Okay, and what about the love? Who is your lovely girlfriend?", not(said(M))) then say(ask, partner, M) .
+		if not(goal(pleasantConversation(_))), bel(not(maritalStatus), female,  M = "Okay, and what about the love? Who is your handsome boyfriend?", not(said(M))) then say(ask, partner, M) .
+		if not(goal(pleasantConversation(_))), bel(not(maritalStatus), not(male), not(female), M = "Okay! And who is your partner or your loved one?", not(said(M))) then say(ask, partner, M) .
+		if not(goal(pleasantConversation(_))), bel(has(user, partner, X), X == 'no', M = "Oh... I see, well you have more time to play with your friends then hehe", not(said(M))) then say(statement, partner, M)+insert(inConversation(partner)) .
+		if not(goal(pleasantConversation(_))), bel(has(user, partner, X), X \== 'no', X \== 'unknown', M = "So nice! I guess you really like " , atom_concat(M, X, M2), atom_concat(M2, " don't you?", M3), not(said(M3))) then say(statement, partner, M3)+insert(inConversation(partner)) .
+		
+		%Future job
+		if not(goal(pleasantConversation(_))), bel(maritalStatus), bel(not(futureJob), M = "And what about the future? What do you want to be when you grow?", not(said(M))) then say(ask, futureJob, M) .
+		if not(goal(pleasantConversation(_))), bel(wants(user, futureJob, X), atom_concat("Oh I see! I think it has a lot of potential, why do you want to be ",X,M), atom_concat(M, "?", M2), not(said(M2))) then say(ask, futureJob, M2) + insert(inConversation(futureJob)) .
 	}
 }
 
 module smallTalk{
 	program{
-		if bel(usingID(partner), has(user, partner, 'no'), dislikes(user, X), X == 'being single', M = "Yeah, I can imagine but don't worry! You will find someone, I am also single hehe", not(said(M))) then say(statement, partner, M) .
-		
+		%Partner smalltalk
+		 %Single case
+		if bel(usingID(partner), userSingle, dislikes(user, X), X == 'being single', M = "Yeah, I can imagine but don't worry! You will find someone, but why don't you like being single?", not(said(M))) then say(ask, partner, M) .
+		if bel(usingID(partner), userSingle, reason(user, X, _), X == 'being single', has(agent, partner, no), reason(agent, 'being single', R), atom_concat("I see... well I am also single but I like it because... ", R, M), atom_concat(M, "!", M2), not(said(M2))) then say(statement, partner, M2) + insert(convCompleted) + drop(pleasantConversation(partner)) .
+		if bel(usingID(partner), userSingle, likes(user, X), X == 'being single', has(user, userName, Y), atom_concat("I am happy to hear that ", Y, M), atom_concat(M, "!", M2), not(said(M2))) then say(statement, partner, M) + insert(reason(user, X, 'time to play with friends')) + insert(convCompleted) + drop(pleasantConversation(partner)) . 
+		if bel(usingID(partner), userSingle, reason(user, X, _), X == 'being single', has(agent, partner, P), P \== 'no', atom_concat("I see... But don't be sad! Do you know that I am dating ", P, M), atom_concat(M, "! Crazy thing!",M2), not(said(M2))) then say(statement, partner, M2) + insert(convCompleted) + drop(pleasantConversation(partner)) .
+		 %With someone case
+		if bel(usingID(partner), has(user, partner, X), dislikes(U, P), P == 'partner', U == 'user', atom_concat("Wow! But why don't you like ", X, M), atom_concat(M, "?", M2), not(said(M2))) then say(ask, partner, M2) .
+		if bel(usingID(partner), has(user, partner, X), likes(U, P), P == 'partner', U == 'user', M = "So cute! And what's the reason behind that love?", not(said(M))) then say(ask, partner, M) .
+		if bel(usingID(partner), has(user, partner, X), likes(U, P), P == 'partner', U == 'user', reason(user, partner, _), atom_concat("I see! Well it would be impossible not to love ", X, M), atom_concat(M, "!", M2), not(said(M2))) then say(statement, partner, M2) + insert(convCompleted) + delete(usingID(partner)).
+		if bel(usingID(partner), has(user, partner, X), dislikes(U, P), P == 'partner', U == 'user', reason(user, partner, _), M = "Okay... maybe you should talk about it or something...", not(said(M))) then say(statement, partner, M) + insert(convCompleted) + delete(usingID(partner)).
+		%Future job smalltalk
 		
 	}
 }
