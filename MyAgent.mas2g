@@ -1,5 +1,6 @@
 environment{
    env = "EIS-2.0.0.jar" .
+   init = [naoOutput = true] .
 }
 
 agentfiles{

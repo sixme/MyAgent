@@ -67,7 +67,7 @@ init module{
 
       %Quits the interaction more or less gently depending with a message.
       %Mode is the message which will be displayed before shutting down the system
-      end(Mode){
+      end(Text){
       	 pre{ true }
          post{ true }
       }
@@ -83,7 +83,7 @@ main module [exit=never] {
 	%If the user doesn't like the conversation and we have unknown predicates, try to know them.
 	if a-goal(cheerUp), bel(unknownTopics, coun(C), M = "Okay, let's change the topic! I remember that I couldn't get some info about you, let's get back to that!", not(said(M))) then say(statement, knowUnknowns, M) + delete(usingID(knowUnknowns)) + delete(coun(C)) + insert(coun(0)).
 	if a-goal(cheerUp), bel(unknownTopics) then knowUnknowns .
-	%Otherwise (or if we already know the unknowns)joke
+	%Otherwise (or if we already know the unknowns) joke
 	if a-goal(cheerUp), bel(not(unknownTopics), M = "Mmm... Let's try to have some fun with some good jokes okay?", not(said(M))) then say(statement, joke, M) .
 	if a-goal(cheerUp), bel(not(unknownTopics)) then joke .
 	%If we have met the user (know his name) and need to know more about her, call the basic knowing model.
@@ -183,22 +183,22 @@ module meetUser{
 	}
 }
 module knowBasicUser{
-	program{
+	program [order = linear]{
 		%Try to deal with failed interactions
-		if bel(failed, usingID(gender), Message = "Mmm I didn't catch that... Did you say that you're a boy?", not(said(Message))) then say(clarification, gender, Message)+delete(failed) .
+		if bel(failed, usingID(gender), Message = "Mmm I didn't catch that... Did you say that you're a boy?", not(said(Message))) then say(clarification, gender, Message)+delete(failed) + insert(clarification).
 		if bel(failed, usingID(gender), Message = "I think it will be better if we skip your gender then hehe, how old are you?", not(said(Message))) then say(ask, age, Message)+delete(failed)+insert(iis(user,gender,unknown))+delete(usingID(gender))+insert(unknown(gender)) .
 		if bel(failed, usingID(age), iis(agent, age, X), M1 = "I didn't understand your age, try again! For instance I am ", atom_concat(M1,X,M2), atom_concat(M2, ' years old! And you?', M3), not(said(M3))) then say(clarification, age, M3)+delete(failed) .
 		if bel(failed, usingID(age), Message = "My robot's ears don't let me hear your age, let's move to something else!", not(said(Message))) then say(statement, age, Message)+delete(failed)+insert(iis(user,age,unknown))+delete(usingID(age))+insert(unknown(age)) .
 		%Ask gender in an amused way
-		if bel(not(gender), agentIs(amused), has(user,userName,Name), atom_concat('Okay time to know you a little bit better ',Name, M1), atom_concat(M1, '! Are you a rowdy boy or a little princess?', M2), not(said(M2))) then say(ask, gender, M2) .
+		if bel(not(gender), not(clarification), agentIs(amused), has(user,userName,Name), atom_concat('Okay time to know you a little bit better ',Name, M1), atom_concat(M1, '! Are you a rowdy boy or a little princess?', M2), not(said(M2))) then say(ask, gender, M2) .
 		%Ask gender in a normal way
-		if bel(not(gender), agentIs(normal), Message = "Mmm... are you a boy or a girl?", not(said(Message))) then say(ask, gender, Message) .
+		if bel(not(gender), not(clarification), agentIs(normal), Message = "Mmm... are you a boy or a girl?", not(said(Message))) then say(ask, gender, Message) .
 		%User doesn't want to tell us her gender
 		if bel(not(gender), agentIs(annoyed), M = "Okay! I get it you don't want to tell me about your gender... What about your age?", not(said(M))) then delete(usingID(gender)) + say(ask, age, M) + insert(dislikes(user, 'talk about your gender')) + insert(iis(user, gender, unknown)).
 		%Respond to gender (boy)
-		if bel(iis(user, gender, X), X == 'a boy', Message = "Okay bandit! And how old are you?", not(said(Message))) then say(ask, age, Message) .
+		if bel(iis(user, gender, X), X == 'a boy', Message = "Okay bandit! And how old are you?", not(said(Message))) then say(ask, age, Message) + delete(clarification).
 		%Respond to gender (girl)
-		if bel(iis(user, gender, X), X == 'a girl', Message = "Okay princess! And how old are you?", not(said(Message))) then say(ask, age, Message) .
+		if bel(iis(user, gender, X), X == 'a girl', Message = "Okay princess! And how old are you?", not(said(Message))) then say(ask, age, Message) + delete(clarification).
 		%Deal with fake gender
 		if bel(iis(user, gender, X), X \== 'a boy', X \== 'a girl', X \== 'unknown', knownPredicates(K), Kk is K - 1) then delete(iis(user, gender, X)) + insert(failed) + delete(knownPredicates(K)) + insert(knownPredicates(Kk)) + insert(usingID(gender))+ knowBasicUser .
 		%Try another time the age
